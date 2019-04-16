@@ -94,6 +94,7 @@ include(CXXFeatureCheck)
 
 if (BENCHMARK_BUILD_32_BITS)
   add_required_cxx_compiler_flag(-m32)
+  add_link_options(-m32)
 endif()
 
 if (MSVC)
