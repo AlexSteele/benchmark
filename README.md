@@ -4,7 +4,25 @@
 [![Coverage Status](https://coveralls.io/repos/google/benchmark/badge.svg)](https://coveralls.io/r/google/benchmark)
 [![slackin](https://slackin-iqtfqnpzxd.now.sh/badge.svg)](https://slackin-iqtfqnpzxd.now.sh/)
 
-A library to support the benchmarking of functions, similar to unit-tests.
+
+
+A library to benchmark functions. Example:
+
+```c++
+#include <benchmark/benchmark.h>
+
+static void BM_SomeFunction(benchmark::State& state) {
+  // Perform any setup here
+  for (auto _ : state) {
+    // This code gets timed
+    SomeFunction();
+  }
+}
+// Register the function as a benchmark
+BENCHMARK(BM_SomeFunction);
+// Run the benchmark.
+BENCHMARK_MAIN();
+```
 
 [Discussion group](https://groups.google.com/d/forum/benchmark-discuss)
 
@@ -14,19 +32,60 @@ IRC channel: [freenode](https://freenode.net) #googlebenchmark
 
 [Assembly Testing Documentation](docs/AssemblyTests.md)
 
+## Requirements
 
-## Building
+Google Benchmark uses C++11 when building the library. As such we require
+a modern C++ toolchain, both compiler and standard library.
 
-The basic steps for configuring and building the library look like this:
+The following minimum versions are strongly recommended build the library:
+
+* GCC 4.8
+* Clang 3.4
+* Visual Studio 2013
+* Intel 2015 Update 1
+
+Anything older *may* work.
+
+Note: Using the library and its headers in C++03 is supported. C++11 is only
+required to build the library.
+
+## Installation and Setup
+
+First, install cmake.
 
 ```bash
 $ git clone https://github.com/google/benchmark.git
 # Benchmark requires Google Test as a dependency. Add the source tree as a subdirectory.
 $ git clone https://github.com/google/googletest.git benchmark/googletest
-$ mkdir build && cd build
-$ cmake -G <generator> [options] ../benchmark
-# Assuming a makefile generator was used
+# Make a build directory to place the build output
+$ mkdir -p benchmark/build && cd benchmark/build
+# This will generate a Makefile with cmake.
+# Use cmake -G <generator> to generate a different file type.
+$ cmake ..
+# Compile the library
 $ make
+```
+
+Your build directory will now look like this:
+
+```
+benchmark/build
+  /src
+    /libbenchmark.a
+```
+
+You should now see a `libbenchmark.a` file. This is what you need to link your benchmark code against.
+
+Next, you can run the tests to make sure the build worked:
+
+```bash
+$ make
+```
+
+If you need to install the library globally, also run:
+
+```
+sudo make install
 ```
 
 Note that Google Benchmark requires Google Test to build and run the tests. This
@@ -40,35 +99,26 @@ dependency can be provided two ways:
 If you do not wish to build and run the tests, add `-DBENCHMARK_ENABLE_GTEST_TESTS=OFF`
 to `CMAKE_ARGS`.
 
-
-## Installation Guide
-
-For Ubuntu and Debian Based System
-
-First make sure you have git and cmake installed (If not please install them)
+### Debug vs Release
+By default, benchmark builds as a debug library. You will see a warning in the
+output when this is the case. To build it as a release library instead, use:
 
 ```
-sudo apt-get install git cmake
+cmake -DCMAKE_BUILD_TYPE=Release
 ```
 
-Now, let's clone the repository and build it
+To enable link-time optimisation, use
 
 ```
-git clone https://github.com/google/benchmark.git
-cd benchmark
-# If you want to build tests and don't use BENCHMARK_DOWNLOAD_DEPENDENCIES, then
-# git clone https://github.com/google/googletest.git
-mkdir build
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=RELEASE
-make
+cmake -DCMAKE_BUILD_TYPE=Release -DBENCHMARK_ENABLE_LTO=true
 ```
 
-If you need to install the library globally
+If you are using gcc, you might need to set `GCC_AR` and `GCC_RANLIB` cmake
+cache variables, if autodetection fails.
 
-```
-sudo make install
-```
+If you are using clang, you may need to set `LLVMAR_EXECUTABLE`,
+`LLVMNM_EXECUTABLE` and `LLVMRANLIB_EXECUTABLE` cmake cache variables.
+
 
 ## Stable and Experimental Library Versions
 
@@ -87,9 +137,9 @@ the right to change and break the API at any time.
 It may help to read the [Google Test documentation](https://github.com/google/googletest/blob/master/googletest/docs/primer.md)
 as some of the structural aspects of the APIs are similar.
 
-## Example usage
+## Example
 ### Basic usage
-Define a function that executes the code to be measured, register it as a
+Define a function that executes the code to benchmark, register it as a
 benchmark function using the `BENCHMARK` macro, and ensure an appropriate `main`
 function is available:
 
@@ -114,15 +164,11 @@ BENCHMARK(BM_StringCopy);
 BENCHMARK_MAIN();
 ```
 
-Don't forget to inform your linker to add benchmark library e.g. through 
-`-lbenchmark` compilation flag. Alternatively, you may leave out the 
-`BENCHMARK_MAIN();` at the end of the source file and link against 
-`-lbenchmark_main` to get the same default behavior.
+To compile this, link against the `libbenchmark.a` library.
 
-The benchmark library will measure and report the timing for code within the
-`for(...)` loop.
+You may instead link against the `libbenchmark_main.a` library and remove `BENCHMARK_MAIN();` above to get the same behavior.
 
-#### Platform-specific libraries
+#### Platform-specific instructions
 When the library is built using GCC it is necessary to link with the pthread
 library due to how GCC implements `std::thread`. Failing to link to pthread will
 lead to runtime exceptions (unless you're using libc++), not linker errors. See
@@ -137,7 +183,9 @@ also required.
 If you're running benchmarks on solaris, you'll want the kstat library linked in
 too (`-lkstat`).
 
-### Passing arguments
+## Usage
+
+### Passing Arguments
 Sometimes a family of benchmarks can be implemented with just one routine that
 takes an extra argument to specify which one of the family of benchmarks to
 run. For example, the following code defines a family of benchmarks for
@@ -224,6 +272,99 @@ static void CustomArguments(benchmark::internal::Benchmark* b) {
 BENCHMARK(BM_SetInsert)->Apply(CustomArguments);
 ```
 
+### Output Formats
+The library supports multiple output formats. Use the
+`--benchmark_format=<console|json|csv>` flag to set the format type. `console`
+is the default format.
+
+The Console format is intended to be a human readable format. By default
+the format generates color output. Context is output on stderr and the
+tabular data on stdout. Example tabular output looks like:
+```
+Benchmark                               Time(ns)    CPU(ns) Iterations
+----------------------------------------------------------------------
+BM_SetInsert/1024/1                        28928      29349      23853  133.097kB/s   33.2742k items/s
+BM_SetInsert/1024/8                        32065      32913      21375  949.487kB/s   237.372k items/s
+BM_SetInsert/1024/10                       33157      33648      21431  1.13369MB/s   290.225k items/s
+```
+
+The JSON format outputs human readable json split into two top level attributes.
+The `context` attribute contains information about the run in general, including
+information about the CPU and the date.
+The `benchmarks` attribute contains a list of every benchmark run. Example json
+output looks like:
+```json
+{
+  "context": {
+    "date": "2015/03/17-18:40:25",
+    "num_cpus": 40,
+    "mhz_per_cpu": 2801,
+    "cpu_scaling_enabled": false,
+    "build_type": "debug"
+  },
+  "benchmarks": [
+    {
+      "name": "BM_SetInsert/1024/1",
+      "iterations": 94877,
+      "real_time": 29275,
+      "cpu_time": 29836,
+      "bytes_per_second": 134066,
+      "items_per_second": 33516
+    },
+    {
+      "name": "BM_SetInsert/1024/8",
+      "iterations": 21609,
+      "real_time": 32317,
+      "cpu_time": 32429,
+      "bytes_per_second": 986770,
+      "items_per_second": 246693
+    },
+    {
+      "name": "BM_SetInsert/1024/10",
+      "iterations": 21393,
+      "real_time": 32724,
+      "cpu_time": 33355,
+      "bytes_per_second": 1199226,
+      "items_per_second": 299807
+    }
+  ]
+}
+```
+
+The CSV format outputs comma-separated values. The `context` is output on stderr
+and the CSV itself on stdout. Example CSV output looks like:
+```
+name,iterations,real_time,cpu_time,bytes_per_second,items_per_second,label
+"BM_SetInsert/1024/1",65465,17890.7,8407.45,475768,118942,
+"BM_SetInsert/1024/8",116606,18810.1,9766.64,3.27646e+06,819115,
+"BM_SetInsert/1024/10",106365,17238.4,8421.53,4.74973e+06,1.18743e+06,
+```
+
+### Output Files
+Write benchmark results to a file with the `--benchmark_out=<filename>` option.
+Specify the output format with `--benchmark_out_format={json|console|csv}`. Note that Specifying
+`--benchmark_out` does not suppress the console output.
+
+## Passing arbitrary arguments to a benchmark
+In C++11 it is possible to define a benchmark that takes an arbitrary number
+of extra arguments. The `BENCHMARK_CAPTURE(func, test_case_name, ...args)`
+macro creates a benchmark that invokes `func`  with the `benchmark::State` as
+the first argument followed by the specified `args...`.
+The `test_case_name` is appended to the name of the benchmark and
+should describe the values passed.
+
+```c++
+template <class ...ExtraArgs>
+void BM_takes_args(benchmark::State& state, ExtraArgs&&... extra_args) {
+  [...]
+}
+// Registers a benchmark named "BM_takes_args/int_string_test" that passes
+// the specified values to `extra_args`.
+BENCHMARK_CAPTURE(BM_takes_args, int_string_test, 42, std::string("abc"));
+```
+Note that elements of `...args` may refer to global variables. Users should
+avoid modifying global state inside of a benchmark.
+
 ### Calculate asymptotic complexity (Big O)
 Asymptotic complexity might be calculated for a family of benchmarks. The
 following code will calculate the coefficient for the high-order term in the
@@ -292,81 +433,6 @@ Three macros are provided for adding benchmark templates.
 #define BENCHMARK_TEMPLATE2(func, arg1, arg2)
 ```
 
-### A Faster KeepRunning loop
-
-In C++11 mode, a ranged-based for loop should be used in preference to
-the `KeepRunning` loop for running the benchmarks. For example:
-
-```c++
-static void BM_Fast(benchmark::State &state) {
-  for (auto _ : state) {
-    FastOperation();
-  }
-}
-BENCHMARK(BM_Fast);
-```
-
-The reason the ranged-for loop is faster than using `KeepRunning`, is
-because `KeepRunning` requires a memory load and store of the iteration count
-ever iteration, whereas the ranged-for variant is able to keep the iteration count
-in a register.
-
-For example, an empty inner loop of using the ranged-based for method looks like:
-
-```asm
-# Loop Init
-  mov rbx, qword ptr [r14 + 104]
-  call benchmark::State::StartKeepRunning()
-  test rbx, rbx
-  je .LoopEnd
-.LoopHeader: # =>This Inner Loop Header: Depth=1
-  add rbx, -1
-  jne .LoopHeader
-.LoopEnd:
-```
-
-Compared to an empty `KeepRunning` loop, which looks like:
-
-```asm
-.LoopHeader: # in Loop: Header=BB0_3 Depth=1
-  cmp byte ptr [rbx], 1
-  jne .LoopInit
-.LoopBody: # =>This Inner Loop Header: Depth=1
-  mov rax, qword ptr [rbx + 8]
-  lea rcx, [rax + 1]
-  mov qword ptr [rbx + 8], rcx
-  cmp rax, qword ptr [rbx + 104]
-  jb .LoopHeader
-  jmp .LoopEnd
-.LoopInit:
-  mov rdi, rbx
-  call benchmark::State::StartKeepRunning()
-  jmp .LoopBody
-.LoopEnd:
-```
-
-Unless C++03 compatibility is required, the ranged-for variant of writing
-the benchmark loop should be preferred.  
-
-## Passing arbitrary arguments to a benchmark
-In C++11 it is possible to define a benchmark that takes an arbitrary number
-of extra arguments. The `BENCHMARK_CAPTURE(func, test_case_name, ...args)`
-macro creates a benchmark that invokes `func`  with the `benchmark::State` as
-the first argument followed by the specified `args...`.
-The `test_case_name` is appended to the name of the benchmark and
-should describe the values passed.
-
-```c++
-template <class ...ExtraArgs>
-void BM_takes_args(benchmark::State& state, ExtraArgs&&... extra_args) {
-  [...]
-}
-// Registers a benchmark named "BM_takes_args/int_string_test" that passes
-// the specified values to `extra_args`.
-BENCHMARK_CAPTURE(BM_takes_args, int_string_test, 42, std::string("abc"));
-```
-Note that elements of `...args` may refer to global variables. Users should
-avoid modifying global state inside of a benchmark.
 
 ## Using RegisterBenchmark(name, fn, args...)
 
@@ -588,7 +654,7 @@ static void BM_vector_push_back(benchmark::State& state) {
 
 Note that `ClobberMemory()` is only available for GNU or MSVC based compilers.
 
-### Set time unit manually
+### Setting the time unit
 If a benchmark runs a few milliseconds it may be hard to visually compare the
 measured times, since the output data is given in nanoseconds per default. In
 order to manually set the time unit, you can specify it manually:
@@ -625,8 +691,8 @@ benchmark.
 
 ## User-defined statistics for repeated benchmarks
 While having mean, median and standard deviation is nice, this may not be
-enough for everyone. For example you may want to know what is the largest
-observation, e.g. because you have some real-time constraints. This is easy.
+enough for everyone. 9For example you may want to know what the largest
+observation is, e.g. because you have some real-time constraints. This is easy.
 The following code will specify a custom statistic to be calculated, defined
 by a lambda function.
 
@@ -920,120 +986,67 @@ times and statistical results across these repetitions will also be reported.
 As well as the per-benchmark entries, a preamble in the report will include
 information about the machine on which the benchmarks are run.
 
-### Output Formats
-The library supports multiple output formats. Use the
-`--benchmark_format=<console|json|csv>` flag to set the format type. `console`
-is the default format.
-
-The Console format is intended to be a human readable format. By default
-the format generates color output. Context is output on stderr and the
-tabular data on stdout. Example tabular output looks like:
-```
-Benchmark                               Time(ns)    CPU(ns) Iterations
-----------------------------------------------------------------------
-BM_SetInsert/1024/1                        28928      29349      23853  133.097kB/s   33.2742k items/s
-BM_SetInsert/1024/8                        32065      32913      21375  949.487kB/s   237.372k items/s
-BM_SetInsert/1024/10                       33157      33648      21431  1.13369MB/s   290.225k items/s
-```
-
-The JSON format outputs human readable json split into two top level attributes.
-The `context` attribute contains information about the run in general, including
-information about the CPU and the date.
-The `benchmarks` attribute contains a list of every benchmark run. Example json
-output looks like:
-```json
-{
-  "context": {
-    "date": "2015/03/17-18:40:25",
-    "num_cpus": 40,
-    "mhz_per_cpu": 2801,
-    "cpu_scaling_enabled": false,
-    "build_type": "debug"
-  },
-  "benchmarks": [
-    {
-      "name": "BM_SetInsert/1024/1",
-      "iterations": 94877,
-      "real_time": 29275,
-      "cpu_time": 29836,
-      "bytes_per_second": 134066,
-      "items_per_second": 33516
-    },
-    {
-      "name": "BM_SetInsert/1024/8",
-      "iterations": 21609,
-      "real_time": 32317,
-      "cpu_time": 32429,
-      "bytes_per_second": 986770,
-      "items_per_second": 246693
-    },
-    {
-      "name": "BM_SetInsert/1024/10",
-      "iterations": 21393,
-      "real_time": 32724,
-      "cpu_time": 33355,
-      "bytes_per_second": 1199226,
-      "items_per_second": 299807
-    }
-  ]
-}
-```
-
-The CSV format outputs comma-separated values. The `context` is output on stderr
-and the CSV itself on stdout. Example CSV output looks like:
-```
-name,iterations,real_time,cpu_time,bytes_per_second,items_per_second,label
-"BM_SetInsert/1024/1",65465,17890.7,8407.45,475768,118942,
-"BM_SetInsert/1024/8",116606,18810.1,9766.64,3.27646e+06,819115,
-"BM_SetInsert/1024/10",106365,17238.4,8421.53,4.74973e+06,1.18743e+06,
-```
-
-### Output Files
-The library supports writing the output of the benchmark to a file specified
-by `--benchmark_out=<filename>`. The format of the output can be specified
-using `--benchmark_out_format={json|console|csv}`. Specifying
-`--benchmark_out` does not suppress the console output.
 
 ## Result comparison
 
 It is possible to compare the benchmarking results. See [Additional Tooling Documentation](docs/tools.md)
 
-## Debug vs Release
-By default, benchmark builds as a debug library. You will see a warning in the
-output when this is the case. To build it as a release library instead, use:
+### Benchmark loop options
 
+In C++11 mode, a ranged-based for loop should be used in preference to
+the `KeepRunning` loop for running the benchmarks. For example:
+
+```c++
+static void BM_Fast(benchmark::State &state) {
+  for (auto _ : state) {
+    FastOperation();
+  }
+}
+BENCHMARK(BM_Fast);
 ```
-cmake -DCMAKE_BUILD_TYPE=Release
+
+The reason the ranged-for loop is faster than using `KeepRunning`, is
+because `KeepRunning` requires a memory load and store of the iteration count
+ever iteration, whereas the ranged-for variant is able to keep the iteration count
+in a register.
+
+For example, an empty inner loop of using the ranged-based for method looks like:
+
+```asm
+# Loop Init
+  mov rbx, qword ptr [r14 + 104]
+  call benchmark::State::StartKeepRunning()
+  test rbx, rbx
+  je .LoopEnd
+.LoopHeader: # =>This Inner Loop Header: Depth=1
+  add rbx, -1
+  jne .LoopHeader
+.LoopEnd:
 ```
 
-To enable link-time optimisation, use
+Compared to an empty `KeepRunning` loop, which looks like:
 
+```asm
+.LoopHeader: # in Loop: Header=BB0_3 Depth=1
+  cmp byte ptr [rbx], 1
+  jne .LoopInit
+.LoopBody: # =>This Inner Loop Header: Depth=1
+  mov rax, qword ptr [rbx + 8]
+  lea rcx, [rax + 1]
+  mov qword ptr [rbx + 8], rcx
+  cmp rax, qword ptr [rbx + 104]
+  jb .LoopHeader
+  jmp .LoopEnd
+.LoopInit:
+  mov rdi, rbx
+  call benchmark::State::StartKeepRunning()
+  jmp .LoopBody
+.LoopEnd:
 ```
-cmake -DCMAKE_BUILD_TYPE=Release -DBENCHMARK_ENABLE_LTO=true
-```
 
-If you are using gcc, you might need to set `GCC_AR` and `GCC_RANLIB` cmake
-cache variables, if autodetection fails.
+Unless C++03 compatibility is required, the ranged-for variant of writing
+the benchmark loop should be preferred.  
 
-If you are using clang, you may need to set `LLVMAR_EXECUTABLE`,
-`LLVMNM_EXECUTABLE` and `LLVMRANLIB_EXECUTABLE` cmake cache variables.
-
-## Compiler Support
-
-Google Benchmark uses C++11 when building the library. As such we require
-a modern C++ toolchain, both compiler and standard library.
-
-The following minimum versions are strongly recommended build the library:
-
-* GCC 4.8
-* Clang 3.4
-* Visual Studio 2013
-* Intel 2015 Update 1
-
-Anything older *may* work.
-
-Note: Using the library and its headers in C++03 is supported. C++11 is only
-required to build the library.
 
 ## Disable CPU frequency scaling
 If you see this error:
